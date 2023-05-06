@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>0670JH</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-colour:orange;
+            text-transform: capitalize;
+        }
+        .hidden {
+            display: none;
+        }
+        table {
+            width:100%;
+            height:100%;
+            margin-top:6px;
+            border-collapse: collapse;
+            background-color:white;
+        }
+        td {
+            padding: 2px;
+        }
+        .sku-description {
+            font-weight: bold;
+            text-align: left;
+            border-top:solid 1px black;
+        }
+        .pick-qty-total {
+            width: 40px;
+            height: 40px;
+            border: 1px solid black;
+            border-radius: 5px;
+            line-height: 2.2;
+            text-align:center;
+            font-weight: bold;
+            font-size: 18px;
+            text-align: center;
+            margin:4px;
+            background-color:white;
+        }
+        .pick-qty-total:hover {
+            background-color:orange;
+            color:white;
+        }
+        .location-sku-code {
+            background-color: whitesmoke;
+            font-size:smaller;
+        }
+        #content{
+            width:100%;
+            height:30px;
+            position:fixed;
+            top:0px;
+            left:0px;
+
+            padding:5px;
+        }
+
+#scrollableDiv {
+    overflow-x: hidden;
+    overflow-y: auto;
+
+    top: 50px;
+    height: 95%; /* Change this to the desired height */
+    width: 100%; /* Set the width to 100% */
+}
+
+    </style>
+</head>
+<body>
+    <input type="file" id="csvFile" accept=".csv">
+    <div id="content" class="hidden">
+        <button id="allBtn">All</button>
+        <button id="filteredBtn">Filtered</button>
+        <select id="pAisleSelect"></select>
+      </div>      
+        
+        <div id="scrollableDiv" style="width: 100%; height: 70%; overflow-y: scroll;">
+            <table id="dataDisplayTable" cellspacing="0" cellpadding="0"></table>
+        </div>
+
+    <script>
+        const csvFileInput = document.getElementById('csvFile');
+        const content = document.getElementById('content');
+        const allBtn = document.getElementById('allBtn');
+        const filteredBtn = document.getElementById('filteredBtn');
+        const pAisleSelect = document.getElementById('pAisleSelect');
+        const scrollableDiv = document.getElementById('scrollableDiv');
+        const dataDisplayTable = document.getElementById('dataDisplayTable');
+
+        let allData = [];
+        let filteredData = [];
+        let activeData = [];
+        let selectedPAisle = "01";
+        let activeFilter = "all";
+
+        csvFileInput.addEventListener('change', async (e) => {
+            if (e.target.files.length === 0) {
+                return;
+            }
+
+            const file = e.target.files[0];
+            const fileText = await file.text();
+            const parsedData = parseCSV(fileText);
+            processData(parsedData);
+            content.classList.remove('hidden');
+            csvFileInput.classList.add('hidden');
+        });
+
+        function parseCSV(text) {
+            // Using 'Papa Parse' library to parse CSV
+            const results = Papa.parse(text.trim(), {
+                header: true,
+                dynamicTyping: true,
+                skipEmptyLines: true
+            });
+            return results.data;
+        }
+
+        function processData(data) {
+            // Clean and format data
+            data.forEach(row => {
+                for (const key in row) {
+                    if (typeof row[key] === 'string') {
+                        row[key] = row[key].replace(/["=]/g, '').replace(/(?<=[a-zA-Z]),(?=[a-zA-Z])/g, '');
+                    }
+                }
+
+                // Calculate pAisle
+                const locationMatch = row['Pick Location'].match(/(\d+|[A-Za-z]+)(?=-)/);
+                if (locationMatch) {
+                    const pAislePrefix = locationMatch[0];
+                    if (pAislePrefix === '02F01') {
+                    row.pAisle = '02';
+                } else if (pAislePrefix === 'BAKERY') {
+                    row.pAisle = 'BAKERY';
+                } else if (['17L13', '17L14', '17L15', '17L16', '17R10'].includes(pAislePrefix)) {
+                    row.pAisle = '17';
+                } else if (pAislePrefix.startsWith('BAK')) {
+                    row.pAisle = 'BAK';
+                } else if (pAislePrefix.startsWith('H0')) {
+                    row.pAisle = 'H0';
+                } else {
+                    row.pAisle = pAislePrefix;
+                }
+            } else {
+                row.pAisle = 'N/A';
+            }
+
+            // Initialize Store value
+            row.Store = 0;
+        });
+
+        // Sort data by Pick Walk Number
+        data.sort((a, b) => a['Pick Walk Number'] - b['Pick Walk Number']);
+
+        // Generate unique SKU Code data
+        const uniqueSKUCodeData = Array.from(new Map(data.map(row => [row['SKU Code'], row])).values());
+        const uniqueSKUCodeDataFiltered = uniqueSKUCodeData.filter(row => row['Pick Qty Total'] > 4);
+
+        // Set the data arrays
+        allData = uniqueSKUCodeData;
+        filteredData = uniqueSKUCodeDataFiltered;
+
+        // Populate pAisle select element
+        const uniquePAisles = [...new Set(allData.map(row => row.pAisle))];
+        uniquePAisles.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+        uniquePAisles.forEach(pAisle => {
+            const option = document.createElement('option');
+            option.value = pAisle;
+            option.textContent = pAisle;
+            pAisleSelect.appendChild(option);
+        });
+
+        // Initialize the data display
+        updateDataDisplay();
+    }
+
+    function updateDataDisplay() {
+        dataDisplayTable.innerHTML = '';
+
+        activeData = activeFilter === 'all' ? allData : filteredData;
+        const displayData = activeData.filter(row => row.pAisle === selectedPAisle);
+
+        displayData.forEach(row => {
+            const tr1 = document.createElement('tr');
+            const tr2 = document.createElement('tr');
+
+            const td1 = document.createElement('td');
+            td1.textContent = row['SKU Description'];
+            td1.classList.add('sku-description');
+
+            const td2 = document.createElement('td');
+            const div = document.createElement('div');
+            div.classList.add('pick-qty-total');
+            div.textContent = row['Pick Qty Total'];
+            td2.appendChild(div);
+            td2.rowSpan = 2;
+
+            const td3 = document.createElement('td');
+            td3.textContent = `${row['Pick Location']} | ${row['SKU Code']}`;
+            td3.classList.add('location-sku-code');
+
+            tr1.appendChild(td1);
+            tr1.appendChild(td2);
+            tr2.appendChild(td3);
+
+            tr1.style.backgroundColor = row.Store ? '#99ffff' : '';
+            tr2.style.backgroundColor = row.Store ? '#99ffff' : '';
+
+            tr1.addEventListener('dblclick', () => {
+                row.Store = row.Store ? 0 : 1;
+                tr1.style.backgroundColor = row.Store ? '#99ffff' : '';
+                
+                tr2.style.backgroundColor = row.Store ? '#99ffff' : '';
+            });
+
+            dataDisplayTable.appendChild(tr1);
+            dataDisplayTable.appendChild(tr2);
+        });
+    }
+
+    allBtn.addEventListener('click', () => {
+        activeFilter = 'all';
+        updateDataDisplay();
+    });
+
+    filteredBtn.addEventListener('click', () => {
+activeFilter = 'filtered';
+updateDataDisplay();
+});
+    pAisleSelect.addEventListener('change', (e) => {
+        selectedPAisle = e.target.value;
+        updateDataDisplay();
+    });
+</script>
+
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.1/papaparse.min.js"></script>
+</body>
+</html>
